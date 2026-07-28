@@ -1,5 +1,4 @@
-import React, { useState, useRef } from 'react';
-import { toBlob } from 'html-to-image';
+import React, { useState, useRef, useEffect } from 'react';
 import { DownloadIcon, UploadIcon, ZoomInIcon, ZoomOutIcon } from 'lucide-react';
 const BadgeCreator = () => {
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
@@ -24,36 +23,80 @@ const BadgeCreator = () => {
   const decreaseZoom = () => {
     setZoom(prev => Math.max(prev - 0.1, 0.1));
   };
+  useEffect(() => {
+    const img = new Image();
+    img.src = '/badge.jpeg';
+  }, []);
+
   const downloadBadge = async () => {
-    if (badgeRef.current && uploadedImage) {
-      setIsLoading(true);
-      try {
-        await new Promise(resolve => setTimeout(resolve, 500));
-        const blob = await toBlob(badgeRef.current, {
-          quality: 0.95,
-          cacheBust: true,
-          pixelRatio: 2
-        });
-        if (!blob) throw new Error('Blob generation failed');
-        const file = new File([blob], 'mon-badge-talitha-koumi.png', { type: 'image/png' });
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          await navigator.share({ files: [file], title: 'Mon badge' });
-        } else {
-          const url = URL.createObjectURL(blob);
-          const link = document.createElement('a');
-          link.download = 'mon-badge-talitha-koumi.png';
-          link.href = url;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          URL.revokeObjectURL(url);
-        }
-      } catch (err) {
-        console.error("Erreur lors de la génération de l'image", err);
-        alert("Une erreur est survenue lors de la génération de l'image. Veuillez réessayer.");
-      } finally {
-        setIsLoading(false);
+    if (!uploadedImage) return;
+    setIsLoading(true);
+    try {
+      const templateImg = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = '/badge.jpeg';
+      });
+      const userImg = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = uploadedImage;
+      });
+
+      const canvas = document.createElement('canvas');
+      const W = 2048, H = 2048;
+      canvas.width = W;
+      canvas.height = H;
+      const ctx = canvas.getContext('2d')!;
+
+      ctx.drawImage(templateImg, 0, 0, W, H);
+
+      const px = 629, py = 336, pw = 760, ph = 681, r = 55;
+      ctx.beginPath();
+      ctx.moveTo(px + r, py);
+      ctx.lineTo(px + pw - r, py);
+      ctx.quadraticCurveTo(px + pw, py, px + pw, py + r);
+      ctx.lineTo(px + pw, py + ph - r);
+      ctx.quadraticCurveTo(px + pw, py + ph, px + pw - r, py + ph);
+      ctx.lineTo(px + r, py + ph);
+      ctx.quadraticCurveTo(px, py + ph, px, py + ph - r);
+      ctx.lineTo(px, py + r);
+      ctx.quadraticCurveTo(px, py, px + r, py);
+      ctx.closePath();
+      ctx.clip();
+
+      const z = zoom || 1;
+      const cw = pw, ch = ph;
+      const sw = userImg.width, sh = userImg.height;
+      const sx = sw / cw, sy = sh / ch;
+      const scale = Math.max(sx, sy) * z;
+      const dw = sw / scale, dh = sh / scale;
+      const dx = px + (cw - dw) / 2, dy = py + (ch - dh) / 2;
+      ctx.drawImage(userImg, dx, dy, dw, dh);
+
+      const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png', 0.95));
+      if (!blob) throw new Error('Blob generation failed');
+
+      const file = new File([blob], 'mon-badge-talitha-koumi.png', { type: 'image/png' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: 'Mon badge' });
+      } else {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.download = 'mon-badge-talitha-koumi.png';
+        link.href = url;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
       }
+    } catch (err) {
+      console.error("Erreur lors de la génération de l'image", err);
+      alert("Une erreur est survenue lors de la génération de l'image. Veuillez réessayer.");
+    } finally {
+      setIsLoading(false);
     }
   };
   return <div className="flex flex-col items-center w-full max-w-[500px]">
@@ -79,7 +122,7 @@ const BadgeCreator = () => {
     </div>
     <div className="mb-6 w-full flex justify-center">
       <div ref={badgeRef} className="relative w-full aspect-square bg-transparent overflow-hidden">
-        <img src="/badge.jpeg" alt="Badge template" className="w-full h-full object-contain" crossOrigin="anonymous" />
+        <img src="/badge.jpeg" alt="Badge template" className="w-full h-full object-contain" />
         <div className="absolute flex items-center justify-center overflow-hidden rounded-[3.5%]"
           style={{
             top: '16.31%',
@@ -96,7 +139,6 @@ const BadgeCreator = () => {
               transformOrigin: 'center',
               objectPosition: 'center center'
             }}
-            crossOrigin="anonymous"
           />}
         </div>
       </div>
