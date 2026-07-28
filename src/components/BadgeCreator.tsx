@@ -1,85 +1,48 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
+import { toBlob } from 'html-to-image';
 import { DownloadIcon, UploadIcon, ZoomInIcon, ZoomOutIcon } from 'lucide-react';
+
 const BadgeCreator = () => {
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [zoom, setZoom] = useState(1);
   const badgeRef = useRef<HTMLDivElement>(null);
+
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
       reader.onload = event => {
         setUploadedImage(event.target?.result as string);
-        // Reset zoom when new image is uploaded
         setZoom(1);
       };
       reader.readAsDataURL(file);
     }
   };
-  const increaseZoom = () => {
-    setZoom(prev => Math.min(prev + 0.1, 2));
-  };
-  const decreaseZoom = () => {
-    setZoom(prev => Math.max(prev - 0.1, 0.1));
-  };
-  useEffect(() => {
-    const img = new Image();
-    img.src = '/badge.jpeg';
-  }, []);
+
+  const increaseZoom = () => setZoom(prev => Math.min(prev + 0.1, 2));
+  const decreaseZoom = () => setZoom(prev => Math.max(prev - 0.1, 0.1));
 
   const downloadBadge = async () => {
-    if (!uploadedImage) return;
+    if (!badgeRef.current || !uploadedImage) return;
     setIsLoading(true);
     try {
-      const templateImg = await new Promise<HTMLImageElement>((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => resolve(img);
-        img.onerror = reject;
-        img.src = '/badge.jpeg';
+      const images = badgeRef.current.querySelectorAll('img');
+      await Promise.all(Array.from(images).map(img =>
+        new Promise<void>((resolve) => {
+          if (img.complete) resolve();
+          else { img.onload = () => resolve(); img.onerror = () => resolve(); }
+        })
+      ));
+
+      const blob = await toBlob(badgeRef.current, {
+        quality: 0.95,
+        pixelRatio: 2
       });
-      const userImg = await new Promise<HTMLImageElement>((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => resolve(img);
-        img.onerror = reject;
-        img.src = uploadedImage;
-      });
-
-      const canvas = document.createElement('canvas');
-      const W = 2048, H = 2048;
-      canvas.width = W;
-      canvas.height = H;
-      const ctx = canvas.getContext('2d')!;
-
-      ctx.drawImage(templateImg, 0, 0, W, H);
-
-      const px = 629, py = 336, pw = 760, ph = 681, r = 55;
-      ctx.beginPath();
-      ctx.moveTo(px + r, py);
-      ctx.lineTo(px + pw - r, py);
-      ctx.quadraticCurveTo(px + pw, py, px + pw, py + r);
-      ctx.lineTo(px + pw, py + ph - r);
-      ctx.quadraticCurveTo(px + pw, py + ph, px + pw - r, py + ph);
-      ctx.lineTo(px + r, py + ph);
-      ctx.quadraticCurveTo(px, py + ph, px, py + ph - r);
-      ctx.lineTo(px, py + r);
-      ctx.quadraticCurveTo(px, py, px + r, py);
-      ctx.closePath();
-      ctx.clip();
-
-      const z = zoom || 1;
-      const cw = pw, ch = ph;
-      const sw = userImg.width, sh = userImg.height;
-      const sx = sw / cw, sy = sh / ch;
-      const scale = Math.max(sx, sy) * z;
-      const dw = sw / scale, dh = sh / scale;
-      const dx = px + (cw - dw) / 2, dy = py + (ch - dh) / 2;
-      ctx.drawImage(userImg, dx, dy, dw, dh);
-
-      const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png', 0.95));
-      if (!blob) throw new Error('Blob generation failed');
+      if (!blob) throw new Error('Échec de génération');
 
       const file = new File([blob], 'mon-badge-talitha-koumi.png', { type: 'image/png' });
+
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file], title: 'Mon badge' });
       } else {
@@ -93,69 +56,88 @@ const BadgeCreator = () => {
         URL.revokeObjectURL(url);
       }
     } catch (err) {
-      console.error("Erreur lors de la génération de l'image", err);
-      alert("Une erreur est survenue lors de la génération de l'image. Veuillez réessayer.");
+      console.error("Erreur", err);
+      alert("Une erreur est survenue. Veuillez réessayer.");
     } finally {
       setIsLoading(false);
     }
   };
-  return <div className="flex flex-col items-center w-full max-w-[500px]">
-    <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6 w-full mb-6">
-      <div className="mb-4">
-        <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="photo-upload">
-          Téléversez votre photo
-        </label>
-        <div className="flex items-center justify-center w-full">
-          <label htmlFor="photo-upload" className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors">
-            <div className="flex flex-col items-center justify-center pt-5 pb-6 px-4 text-center">
-              <UploadIcon className="w-8 h-8 mb-3 text-gray-500" />
-              <p className="mb-2 text-sm text-gray-500">
-                <span className="font-semibold">Cliquez pour téléverser</span>{' '}
-                <span className="hidden sm:inline">ou glissez-déposez</span>
-              </p>
-              <p className="text-xs text-gray-500">PNG, JPG ou JPEG</p>
-            </div>
-            <input id="photo-upload" type="file" className="hidden" accept="image/*" onChange={handleImageUpload} />
+
+  return (
+    <div className="flex flex-col items-center w-full max-w-[500px]">
+      <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6 w-full mb-6">
+        <div className="mb-4">
+          <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="photo-upload">
+            Téléversez votre photo
           </label>
+          <div className="flex items-center justify-center w-full">
+            <label htmlFor="photo-upload" className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors">
+              <div className="flex flex-col items-center justify-center pt-5 pb-6 px-4 text-center">
+                <UploadIcon className="w-8 h-8 mb-3 text-gray-500" />
+                <p className="mb-2 text-sm text-gray-500">
+                  <span className="font-semibold">Cliquez pour téléverser</span>{' '}
+                  <span className="hidden sm:inline">ou glissez-déposez</span>
+                </p>
+                <p className="text-xs text-gray-500">PNG, JPG ou JPEG</p>
+              </div>
+              <input id="photo-upload" type="file" className="hidden" accept="image/*" onChange={handleImageUpload} />
+            </label>
+          </div>
         </div>
       </div>
-    </div>
-    <div className="mb-6 w-full flex justify-center">
-      <div ref={badgeRef} className="relative w-full aspect-square bg-transparent overflow-hidden">
-        <img src="/badge.jpeg" alt="Badge template" className="w-full h-full object-contain" />
-        <div className="absolute flex items-center justify-center overflow-hidden rounded-[3.5%]"
-          style={{
-            top: '16.31%',
-            left: '30.70%',
-            width: '38.62%',
-            height: '35.35%'
-          }}>
-          {uploadedImage && <img
-            src={uploadedImage}
-            alt="Uploaded"
-            className="absolute inset-0 min-w-full min-h-full object-cover"
+
+      <div className="mb-6 w-full flex justify-center">
+        <div ref={badgeRef} className="relative w-full aspect-square bg-transparent overflow-hidden">
+          <img src="/badge.jpeg" alt="Badge template" className="w-full h-full object-contain" />
+          <div className="absolute flex items-center justify-center overflow-hidden rounded-[3.5%]"
             style={{
-              transform: `scale(${zoom})`,
-              transformOrigin: 'center',
-              objectPosition: 'center center'
-            }}
-          />}
+              top: '16.31%',
+              left: '30.70%',
+              width: '38.62%',
+              height: '35.35%'
+            }}>
+            {uploadedImage && (
+              <img
+                src={uploadedImage}
+                alt="Uploaded"
+                className="absolute inset-0 min-w-full min-h-full object-cover"
+                style={{
+                  transform: `scale(${zoom})`,
+                  transformOrigin: 'center',
+                  objectPosition: 'center center'
+                }}
+              />
+            )}
+          </div>
         </div>
       </div>
+
+      {uploadedImage && (
+        <div className="flex items-center gap-4 mb-6">
+          <button onClick={decreaseZoom} className="p-2 bg-gray-200 rounded-full hover:bg-gray-300" title="Réduire">
+            <ZoomOutIcon className="w-5 h-5" />
+          </button>
+          <span className="text-sm font-medium">Ajuster la taille</span>
+          <button onClick={increaseZoom} className="p-2 bg-gray-200 rounded-full hover:bg-gray-300" title="Agrandir">
+            <ZoomInIcon className="w-5 h-5" />
+          </button>
+        </div>
+      )}
+
+      <button
+        onClick={downloadBadge}
+        disabled={!uploadedImage || isLoading}
+        className={`flex items-center justify-center gap-2 px-6 py-3 rounded-md text-white font-medium w-full sm:w-auto transition-all ${
+          !uploadedImage || isLoading
+            ? 'bg-gray-400 cursor-not-allowed'
+            : 'bg-green-600 hover:bg-green-700 shadow-md active:scale-95'
+        }`}
+      >
+        <DownloadIcon className="w-5 h-5" />
+        {isLoading ? 'Génération en cours...' : 'Télécharger mon badge'}
+      </button>
     </div>
-    {uploadedImage && <div className="flex items-center gap-4 mb-6">
-      <button onClick={decreaseZoom} className="p-2 bg-gray-200 rounded-full hover:bg-gray-300" title="Réduire">
-        <ZoomOutIcon className="w-5 h-5" />
-      </button>
-      <span className="text-sm font-medium">Ajuster la taille</span>
-      <button onClick={increaseZoom} className="p-2 bg-gray-200 rounded-full hover:bg-gray-300" title="Agrandir">
-        <ZoomInIcon className="w-5 h-5" />
-      </button>
-    </div>}
-    <button onClick={downloadBadge} disabled={!uploadedImage || isLoading} className={`flex items-center justify-center gap-2 px-6 py-3 rounded-md text-white font-medium w-full sm:w-auto transition-all ${!uploadedImage || isLoading ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 shadow-md active:scale-95'}`}>
-      <DownloadIcon className="w-5 h-5" />
-      {isLoading ? 'Génération en cours...' : 'Télécharger mon badge'}
-    </button>
-  </div>;
+  );
 };
+
 export default BadgeCreator;
