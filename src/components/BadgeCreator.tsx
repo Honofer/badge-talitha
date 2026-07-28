@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { toPng } from 'html-to-image';
+import { toBlob } from 'html-to-image';
 import { DownloadIcon, UploadIcon, ZoomInIcon, ZoomOutIcon } from 'lucide-react';
 const BadgeCreator = () => {
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
@@ -28,20 +28,26 @@ const BadgeCreator = () => {
     if (badgeRef.current && uploadedImage) {
       setIsLoading(true);
       try {
-        // Add a small delay to ensure all images are properly loaded
         await new Promise(resolve => setTimeout(resolve, 500));
-        const dataUrl = await toPng(badgeRef.current, {
+        const blob = await toBlob(badgeRef.current, {
           quality: 0.95,
           cacheBust: true,
           pixelRatio: 2
         });
-        // Create and trigger download
-        const link = document.createElement('a');
-        link.download = 'mon-badge-talitha-koumi.png';
-        link.href = dataUrl;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        if (!blob) throw new Error('Blob generation failed');
+        const file = new File([blob], 'mon-badge-talitha-koumi.png', { type: 'image/png' });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: 'Mon badge' });
+        } else {
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.download = 'mon-badge-talitha-koumi.png';
+          link.href = url;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+        }
       } catch (err) {
         console.error("Erreur lors de la génération de l'image", err);
         alert("Une erreur est survenue lors de la génération de l'image. Veuillez réessayer.");
