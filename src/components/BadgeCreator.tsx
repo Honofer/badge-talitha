@@ -1,12 +1,15 @@
 import React, { useState, useRef } from 'react';
-import { toBlob } from 'html-to-image';
 import { DownloadIcon, UploadIcon, ZoomInIcon, ZoomOutIcon } from 'lucide-react';
+
+const W = 2048;
+const H = 2048;
+const PHOTO = { x: 629, y: 334, w: 791, h: 724, r: 55 };
 
 const BadgeCreator = () => {
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [zoom, setZoom] = useState(1);
-  const badgeRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -23,27 +26,67 @@ const BadgeCreator = () => {
   const increaseZoom = () => setZoom(prev => Math.min(prev + 0.1, 2));
   const decreaseZoom = () => setZoom(prev => Math.max(prev - 0.1, 0.1));
 
+  const loadImage = (src: string): Promise<HTMLImageElement> =>
+    new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = src;
+    });
+
+  const drawRoundedRect = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) => {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  };
+
   const downloadBadge = async () => {
-    if (!badgeRef.current || !uploadedImage) return;
+    if (!uploadedImage) return;
     setIsLoading(true);
     try {
-      const images = badgeRef.current.querySelectorAll('img');
-      await Promise.all(Array.from(images).map(img =>
-        new Promise<void>((resolve) => {
-          if (img.complete) resolve();
-          else { img.onload = () => resolve(); img.onerror = () => resolve(); }
-        })
-      ));
+      const [template, userPhoto] = await Promise.all([
+        loadImage('/badge.jpeg'),
+        loadImage(uploadedImage)
+      ]);
 
-      const blob = await toBlob(badgeRef.current, {
-        quality: 0.95,
-        pixelRatio: 2
-      });
+      const canvas = document.createElement('canvas');
+      canvas.width = W;
+      canvas.height = H;
+      const ctx = canvas.getContext('2d')!;
+
+      ctx.drawImage(template, 0, 0, W, H);
+
+      ctx.save();
+      drawRoundedRect(ctx, PHOTO.x, PHOTO.y, PHOTO.w, PHOTO.h, PHOTO.r);
+      ctx.clip();
+
+      const { x, y, w, h } = PHOTO;
+      const sx = userPhoto.width / w;
+      const sy = userPhoto.height / h;
+      const scale = Math.max(sx, sy) * zoom;
+      const dw = userPhoto.width / scale;
+      const dh = userPhoto.height / scale;
+      const dx = x + (w - dw) / 2;
+      const dy = y + (h - dh) / 2;
+
+      ctx.drawImage(userPhoto, dx, dy, dw, dh);
+      ctx.restore();
+
+      const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png', 0.95));
       if (!blob) throw new Error('Échec de génération');
 
-      const file = new File([blob], 'mon-badge-talitha-koumi.png', { type: 'image/png' });
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
 
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      if (isIOS) {
+        const file = new File([blob], 'mon-badge-talitha-koumi.png', { type: 'image/png' });
         await navigator.share({ files: [file], title: 'Mon badge' });
       } else {
         const url = URL.createObjectURL(blob);
@@ -86,13 +129,13 @@ const BadgeCreator = () => {
         </div>
       </div>
 
-      <div className="mb-6 w-full flex justify-center">
-        <div ref={badgeRef} className="relative w-full aspect-square bg-transparent overflow-hidden">
+      <div ref={containerRef} className="mb-6 w-full flex justify-center">
+        <div className="relative w-full aspect-square bg-transparent overflow-hidden">
           <img src="/badge.jpeg" alt="Badge template" className="w-full h-full object-contain" />
           <div className="absolute flex items-center justify-center overflow-hidden rounded-[3.5%]"
             style={{
               top: '16.31%',
-              left: '30.70%',
+              left: '30.71%',
               width: '38.62%',
               height: '35.35%'
             }}>
