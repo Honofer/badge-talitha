@@ -69,11 +69,9 @@ const BadgeCreator = () => {
       ctx.clip();
 
       const { x, y, w, h } = PHOTO;
-      const sx = userPhoto.width / w;
-      const sy = userPhoto.height / h;
-      const scale = Math.max(sx, sy) * zoom;
-      const dw = userPhoto.width / scale;
-      const dh = userPhoto.height / scale;
+      const scale = Math.max(w / userPhoto.width, h / userPhoto.height) * zoom;
+      const dw = userPhoto.width * scale;
+      const dh = userPhoto.height * scale;
       const dx = x + (w - dw) / 2;
       const dy = y + (h - dh) / 2;
 
