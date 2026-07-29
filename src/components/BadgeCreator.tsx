@@ -81,10 +81,9 @@ const BadgeCreator = () => {
       const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png', 0.95));
       if (!blob) throw new Error('Échec de génération');
 
-      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      const file = new File([blob], 'mon-badge-talitha-koumi.png', { type: 'image/png' });
 
-      if (isIOS) {
-        const file = new File([blob], 'mon-badge-talitha-koumi.png', { type: 'image/png' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file], title: 'Mon badge' });
       } else {
         const url = URL.createObjectURL(blob);
